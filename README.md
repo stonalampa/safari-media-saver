@@ -1,54 +1,79 @@
 # Safari Media Saver
 
-A small Safari Web Extension that adds a **⬇ save** button to Instagram — posts, reels, stories and highlights — so you can keep the photo or video you're looking at with one click.
+A small Safari Web Extension that adds a **⬇ save** button to Instagram, so you can keep the photo or video you're looking at with one click — no paid extension, no third-party website, no logging in anywhere else.
 
-> Status: early work in progress — Instagram only. Facebook is planned next.
+| Where you are          | What ⬇ saves                                  |
+| ---------------------- | --------------------------------------------- |
+| Feed                   | The post most visible on screen               |
+| Post / carousel        | The post — every slide of a carousel          |
+| Reel                   | The reel video                                |
+| Story                  | The story currently shown (photo or video)    |
+| Highlight              | The highlight item currently shown            |
 
-## How it works (and why it's account-safe)
+Files land in your Downloads folder as `username_<id>.jpg` / `.mp4` (carousels get `_1`, `_2`, … suffixes).
 
-- The page already downloads JSON describing every post you scroll past, including direct CDN links to the full-size photo or video.
-- `interceptor.js` runs in the page and *observes* those responses (`fetch`, `XMLHttpRequest`, inline `<script>` data). It never sends a request of its own.
-- When you click ⬇, the file is fetched from the CDN (`*.cdninstagram.com` / `*.fbcdn.net`) — the same signed URL the page uses to show it to you — and saved to Downloads.
+> Instagram only for now. Facebook support is planned.
 
-What it deliberately does **not** do:
+## How it works
 
-- No calls to Instagram/Facebook APIs and no use of your cookies outside the browser.
-- No "download whole profile" or any bulk mode. One click saves the post on screen (all slides, for a carousel) or the current story.
-- No telemetry, no external servers.
+Everything the extension saves has already reached your browser through normal browsing. It doesn't scrape anything: it picks up what the page already loaded, the same way you could find the file in Web Inspector's Network tab and save it by hand.
 
-This is a tool for personally saving the occasional post, not a scraper.
+1. **Observe.** Instagram's page receives JSON describing every post, reel and story you scroll past, including direct CDN links to the full-size media. `interceptor.js` runs in the page and *reads* those responses (`fetch`, `XMLHttpRequest`, and the data embedded in the initial HTML). It never sends a request of its own.
+2. **Match.** `content.js` works out what you're looking at: the shortcode or story id in the URL, the most visible post in the feed, or — for highlights, whose URL doesn't identify the current item — the image/video on screen, matched by its CDN file name or (for streamed videos) by duration.
+3. **Save.** On click, the file is fetched from Instagram's CDN (`*.cdninstagram.com` / `*.fbcdn.net`) using the signed link the page already had, *without* cookies, and saved via a regular browser download.
 
-## Project layout
+### Why it's safe for your account
 
-```
-extension/            Web extension source (Manifest V3)
-  manifest.json
-  src/interceptor.js  MAIN world: observes page data, extracts media URLs
-  src/content.js      Isolated world: buttons + downloads
-  src/content.css
-xcode/                Wrapper macOS app required by Safari (generated with
-                      safari-web-extension-converter; references extension/ directly)
-```
+Tools like `yt-dlp` or `instaloader` call Instagram's API themselves, using your session cookies from a client that doesn't look like a browser — exactly the kind of traffic that triggers "suspicious activity" checks. This extension doesn't:
 
-## Running it (Safari, macOS)
+- **No Instagram/Facebook API calls** and no use of your cookies outside the browser. Instagram sees nothing but you browsing normally.
+- **No bulk mode.** No "download the whole profile", no background crawling. One click saves what's on screen.
+- **No telemetry, no external servers.** Nothing leaves your Mac except the CDN download itself.
 
-Requires Xcode.
+This is a tool for personally saving the occasional post. Please respect the creators whose content you save.
 
-1. Open `xcode/Safari Media Saver/Safari Media Saver.xcodeproj` and press **⌘R**, or build from the command line:
+## Install (macOS, Safari)
+
+There is no App Store build — you build it yourself, for free. Requires **Xcode** (free, Mac App Store).
+
+1. Clone the repo and build the app:
    ```sh
-   cd "xcode/Safari Media Saver"
+   git clone https://github.com/stonalampa/safari-media-saver.git
+   cd "safari-media-saver/xcode/Safari Media Saver"
    xcodebuild -scheme "Safari Media Saver" -configuration Debug -derivedDataPath ../../build build
    open "../../build/Build/Products/Debug/Safari Media Saver.app"
    ```
-   Running the app once registers the extension with Safari.
-2. In Safari: **Settings → Advanced → Show features for web developers**, then **Develop → Developer Settings → Allow unsigned extensions**. Safari resets this every time it quits.
+   Or open `xcode/Safari Media Saver/Safari Media Saver.xcodeproj` in Xcode and press **⌘R**. Running the app once registers the extension with Safari.
+2. In Safari: **Settings → Advanced → Show features for web developers**, then in the **Develop** menu enable **Allow Unsigned Extensions**.
 3. **Settings → Extensions →** enable *Safari Media Saver* and allow it on `www.instagram.com`.
-4. Open Instagram and click ⬇ on a post. On the first save, allow downloads for instagram.com.
+4. Open Instagram and click ⬇ (bottom-right). On the first save, allow downloads for instagram.com.
 
-Edits to files in `extension/` need a rebuild (⌘R) to show up in Safari.
+### Staying enabled after Safari restarts
 
-The same `extension/` folder also loads as an unpacked extension in Chromium-based browsers (`chrome://extensions` → Developer mode → Load unpacked).
+Safari turns *Allow Unsigned Extensions* off every time it quits, which disables the extension until you switch it back on. To avoid that, sign the build with your own Apple ID: in Xcode, add your Apple ID under **Settings → Accounts**, then select your *Personal Team* under **Signing & Capabilities** for both targets (the app and the extension) and rebuild. A free Apple ID is enough for local use.
+
+## Development
+
+```
+extension/              Web extension source (Manifest V3)
+  manifest.json
+  src/interceptor.js    Runs in the page: observes loaded JSON, extracts media URLs
+  src/content.js        Content script: injects the interceptor, resolves what's on screen, downloads
+  src/content.css       The ⬇ button
+xcode/                  Wrapper macOS app that Safari requires (generated by
+                        safari-web-extension-converter; references extension/ directly)
+```
+
+- Edit files in `extension/`, then rebuild (⌘R) and reload the Instagram tab.
+- Safari doesn't support `"world": "MAIN"` for content scripts, so `content.js` injects `interceptor.js` into the page via a `<script>` tag (listed in `web_accessible_resources`).
+- Safari has no `downloads` API; saving uses a blob URL and an `<a download>` click.
+- Debugging: open **Develop → Web Inspector** on the Instagram tab; the extension logs lines prefixed with `[safari-media-saver]`. If ⬇ shows **?**, it logs what it saw on screen.
+
+### Known limitations
+
+- Instagram changes its internal data format from time to time; when it does, saving may stop working until the parser is updated.
+- Highlight videos are identified by duration. Two videos in the same highlight with (nearly) identical length can be confused.
 
 ## License
 
-TBD
+[MIT](LICENSE) © 2026 Milan Radanović
