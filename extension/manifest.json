@@ -2,19 +2,33 @@
   "manifest_version": 3,
   "name": "Safari Media Saver",
   "version": "0.1.0",
-  "description": "One-click save of the Instagram photo or video you are looking at. Reads only what the page already loaded — no scraping, no extra API calls.",
+  "description": "One-click save of the Instagram or Facebook photo or video you are looking at. Reads only what the page already loaded — no scraping, no extra API calls.",
   "content_scripts": [
     {
-      "matches": ["https://www.instagram.com/*"],
-      "js": ["src/content.js"],
-      "css": ["src/content.css"],
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://www.facebook.com/*",
+        "https://web.facebook.com/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "css": [
+        "src/content.css"
+      ],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/interceptor.js"],
-      "matches": ["https://www.instagram.com/*"]
+      "resources": [
+        "src/interceptor.js"
+      ],
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://www.facebook.com/*",
+        "https://web.facebook.com/*"
+      ]
     }
   ]
 }

@@ -7,12 +7,15 @@
   const CODE_RE = /\/(?:[\w.]+\/)?(?:p|reels?|tv)\/([\w-]+)/;
   const STORY_RE = /^\/stories\/(?!highlights\/)[^/]+\/(\d+)/;
   const HIGHLIGHT_RE = /^\/stories\/highlights\/(\d+)/;
+  const IS_FACEBOOK = location.hostname.endsWith('facebook.com');
+  const FB_STORY_RE = /^\/stories\/[^/]+\/([^/]+)/;
 
   document.addEventListener('sms:media', (event) => {
     try {
       for (const post of JSON.parse(event.detail)) {
         if (post.code) media.set(post.code, post);
         if (post.pk) media.set(post.pk, post);
+        if (post.story) media.set(`story:${post.story}`, post);
         post.files.forEach((file, index) => {
           for (const key of file.keys) byFile.set(key, { post, index });
         });
@@ -82,37 +85,90 @@
     return null;
   }
 
-  // Highlight videos play from a blob: stream with no CDN URL to match, so fall
-  // back to comparing the playing video's duration with the highlight's items.
-  function highlightVideoItem() {
-    const highlight = location.pathname.match(HIGHLIGHT_RE)?.[1];
-    const video = mostVisible('video')[0]?.el;
-    if (!highlight || !video || !Number.isFinite(video.duration)) return null;
-    const candidates = [...new Set(media.values())]
-      .filter((post) => post.highlight === highlight && post.files[0]?.duration)
+  // Streamed videos play from a blob: URL with no CDN link to match, so fall
+  // back to comparing the playing video's duration with known videos.
+  // With onlyOne, a scope holding a single video (e.g. a one-video highlight) wins outright.
+  function videoByDuration(belongs, onlyOne = false) {
+    const video = mostVisible('img, video')[0]?.el;
+    if (video?.tagName !== 'VIDEO' || !Number.isFinite(video.duration)) return null;
+    const videos = [...new Set(media.values())].filter(
+      (post) => belongs(post) && post.files.length === 1 && post.files[0].kind === 'video',
+    );
+    if (onlyOne && videos.length === 1) return wholePost(videos[0], videos[0].pk);
+    const candidates = videos
+      .filter((post) => post.files[0].duration)
       .map((post) => ({ post, diff: Math.abs(post.files[0].duration - video.duration) }))
       .filter((x) => x.diff < 0.5)
       .sort((a, b) => a.diff - b.diff);
-    if (candidates.length > 1) console.warn('[safari-media-saver] several highlight videos match by duration, using closest');
+    if (candidates.length > 1) console.warn('[safari-media-saver] several videos match by duration, using closest');
     const post = candidates[0]?.post;
     return post ? wholePost(post, post.pk) : null;
   }
 
+  // Last resort: save exactly what is displayed, if it has a plain CDN URL.
+  function displayedMedia() {
+    const el = mostVisible('img, video')[0]?.el;
+    const src = el && (el.currentSrc || el.src);
+    if (!src?.startsWith('http')) return null;
+    const id = (fileKey(src) || 'media').replace(/\.\w+$/, '');
+    return { owner: IS_FACEBOOK ? 'facebook' : 'instagram', id, files: [{ kind: el.tagName === 'VIDEO' ? 'video' : 'image', url: src }] };
+  }
+
   function debugDump() {
-    console.warn('[safari-media-saver] nothing matched on', location.pathname, {
-      known: media.size,
-      onScreen: mostVisible('img, video')
-        .slice(0, 4)
-        .map(({ el, area }) => ({ tag: el.tagName, area: Math.round(area), src: el.currentSrc || el.src, poster: el.poster, duration: el.duration })),
+    const posts = [...new Set(media.values())];
+    console.warn('[safari-media-saver] nothing matched on', location.pathname + location.search, {
+      known: posts.length,
+      knownStoryCards: posts.filter((p) => p.story).map((p) => `${p.story} → ${p.files[0].kind} ${p.files[0].duration ?? ''}`),
+      knownScopes: posts.filter((p) => p.scopes?.length).map((p) => p.scopes.join('/')),
+      knownVideosWithDuration: posts.filter((p) => p.files[0]?.duration).map((p) => p.files[0].duration),
+      onScreen: mostVisible('img, video, canvas')
+        .slice(0, 5)
+        .map(({ el, area }) => ({
+          tag: el.tagName,
+          area: Math.round(area),
+          src: (el.currentSrc || el.src || '').slice(0, 200),
+          poster: el.poster,
+          duration: el.duration,
+        })),
     });
   }
 
+  function highlightVideoItem() {
+    const highlight = location.pathname.match(HIGHLIGHT_RE)?.[1];
+    return highlight ? videoByDuration((post) => post.highlight === highlight, true) : null;
+  }
+
+  // Photo viewer, watch, video and reel pages carry the media id in the URL.
+  function facebookIdFromLocation() {
+    const params = new URLSearchParams(location.search);
+    return (
+      params.get('fbid') ||
+      params.get('v') ||
+      location.pathname.match(/\/(?:reel|videos(?:\/[^/]+)?|photos\/[^/]+)\/(\d+)/)?.[1] ||
+      null
+    );
+  }
+
+  function resolveFacebook() {
+    const card = location.pathname.match(FB_STORY_RE)?.[1];
+    const story = card && media.get(`story:${decodeURIComponent(card)}`);
+    if (story) return wholePost(story, story.pk);
+    const id = facebookIdFromLocation();
+    const post = id && media.get(id);
+    if (post) return wholePost(post, id);
+    // Highlights: /stories/<highlight id>/ — prefer videos that sit under that highlight.
+    const bucket = location.pathname.match(/^\/stories\/(\d+)\/?$/)?.[1];
+    const inBucket = bucket && videoByDuration((p) => p.scopes?.includes(bucket), true);
+    return onScreenItem() ?? inBucket ?? videoByDuration(() => true) ?? displayedMedia();
+  }
+
   function resolveTarget() {
+    if (IS_FACEBOOK) return resolveFacebook();
     const path = location.pathname;
     if (path.startsWith('/stories/')) {
       const pk = path.match(STORY_RE)?.[1];
       const post = pk && media.get(pk);
-      return post ? wholePost(post, pk) : onScreenItem() ?? highlightVideoItem();
+      return post ? wholePost(post, pk) : onScreenItem() ?? highlightVideoItem() ?? displayedMedia();
     }
     let code = codeFromHref(path);
     if (!code) {
@@ -186,10 +242,11 @@
   });
 
   // Show the button wherever there is something to save: posts, reels, stories, feed.
+  // Facebook mixes media into almost every page, so it's always shown there.
   function render() {
     if (!document.body) return;
     const path = location.pathname;
-    const show = Boolean(codeFromHref(path)) || path.startsWith('/stories/') || Boolean(document.querySelector('article'));
+    const show = IS_FACEBOOK || Boolean(codeFromHref(path)) || path.startsWith('/stories/') || Boolean(document.querySelector('article'));
     if (show && !button.isConnected) document.body.appendChild(button);
     if (!show && button.isConnected) button.remove();
   }

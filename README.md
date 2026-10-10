@@ -1,32 +1,41 @@
 # Safari Media Saver
 
-A small Safari Web Extension that adds a **⬇ save** button to Instagram, so you can keep the photo or video you're looking at with one click — no paid extension, no third-party website, no logging in anywhere else.
+A small Safari Web Extension that adds a **⬇ save** button to Instagram and Facebook, so you can keep the photo or video you're looking at with one click — no paid extension, no third-party website, no logging in anywhere else.
 
-| Where you are          | What ⬇ saves                                  |
-| ---------------------- | --------------------------------------------- |
-| Feed                   | The post most visible on screen               |
-| Post / carousel        | The post — every slide of a carousel          |
-| Reel                   | The reel video                                |
-| Story                  | The story currently shown (photo or video)    |
-| Highlight              | The highlight item currently shown            |
+**Instagram**
 
-Files land in your Downloads folder as `username_<id>.jpg` / `.mp4` (carousels get `_1`, `_2`, … suffixes).
+| Where you are   | What ⬇ saves                               |
+| --------------- | ------------------------------------------ |
+| Feed            | The post most visible on screen            |
+| Post / carousel | The post — every slide of a carousel       |
+| Reel            | The reel video                             |
+| Story           | The story currently shown (photo or video) |
+| Highlight       | The highlight item currently shown         |
 
-> Instagram only for now. Facebook support is planned.
+**Facebook**
+
+| Where you are         | What ⬇ saves                        |
+| --------------------- | ----------------------------------- |
+| Photo viewer          | The open photo, full size           |
+| Video / Watch / Reel  | The video, in HD when available     |
+| Story / highlight     | The item currently shown            |
+| Feed                  | The photo or video on screen        |
+
+Files land in your Downloads folder as `<owner>_<id>.jpg` / `.mp4` (carousels get `_1`, `_2`, … suffixes).
 
 ## How it works
 
 Everything the extension saves has already reached your browser through normal browsing. It doesn't scrape anything: it picks up what the page already loaded, the same way you could find the file in Web Inspector's Network tab and save it by hand.
 
-1. **Observe.** Instagram's page receives JSON describing every post, reel and story you scroll past, including direct CDN links to the full-size media. `interceptor.js` runs in the page and *reads* those responses (`fetch`, `XMLHttpRequest`, and the data embedded in the initial HTML). It never sends a request of its own.
-2. **Match.** `content.js` works out what you're looking at: the shortcode or story id in the URL, the most visible post in the feed, or — for highlights, whose URL doesn't identify the current item — the image/video on screen, matched by its CDN file name or (for streamed videos) by duration.
-3. **Save.** On click, the file is fetched from Instagram's CDN (`*.cdninstagram.com` / `*.fbcdn.net`) using the signed link the page already had, *without* cookies, and saved via a regular browser download.
+1. **Observe.** Instagram and Facebook pages receive JSON describing every post, reel, photo, video and story you scroll past, including direct CDN links to the full-size media. `interceptor.js` runs in the page and *reads* those responses (`fetch`, `XMLHttpRequest`, and the data embedded in the initial HTML). It never sends a request of its own.
+2. **Match.** `content.js` works out what you're looking at: the post, photo, video or story id in the URL, the most visible post in the feed, or — where the URL doesn't identify the current item, as in highlights — the image/video on screen, matched by its CDN file name or (for streamed videos) by duration, read from the video's DASH manifest.
+3. **Save.** On click, the file is fetched from the CDN (`*.cdninstagram.com` / `*.fbcdn.net`) using the signed link the page already had, *without* cookies, and saved via a regular browser download.
 
 ### Why it's safe for your account
 
 Tools like `yt-dlp` or `instaloader` call Instagram's API themselves, using your session cookies from a client that doesn't look like a browser — exactly the kind of traffic that triggers "suspicious activity" checks. This extension doesn't:
 
-- **No Instagram/Facebook API calls** and no use of your cookies outside the browser. Instagram sees nothing but you browsing normally.
+- **No Instagram/Facebook API calls** and no use of your cookies outside the browser. Instagram and Facebook see nothing but you browsing normally.
 - **No bulk mode.** No "download the whole profile", no background crawling. One click saves what's on screen.
 - **No telemetry, no external servers.** Nothing leaves your Mac except the CDN download itself.
 
@@ -45,8 +54,8 @@ There is no App Store build — you build it yourself, for free. Requires **Xcod
    ```
    Or open `xcode/Safari Media Saver/Safari Media Saver.xcodeproj` in Xcode and press **⌘R**. Running the app once registers the extension with Safari.
 2. In Safari: **Settings → Advanced → Show features for web developers**, then in the **Develop** menu enable **Allow Unsigned Extensions**.
-3. **Settings → Extensions →** enable *Safari Media Saver* and allow it on `www.instagram.com`.
-4. Open Instagram and click ⬇ (bottom-right). On the first save, allow downloads for instagram.com.
+3. **Settings → Extensions →** enable *Safari Media Saver* and allow it on `www.instagram.com` and `www.facebook.com`.
+4. Open Instagram or Facebook and click ⬇ (bottom-right). On the first save, allow downloads for the site.
 
 ### Staying enabled after Safari restarts
 
@@ -64,15 +73,16 @@ xcode/                  Wrapper macOS app that Safari requires (generated by
                         safari-web-extension-converter; references extension/ directly)
 ```
 
-- Edit files in `extension/`, then rebuild (⌘R) and reload the Instagram tab.
+- Edit files in `extension/`, then rebuild (⌘R) and reload the Instagram/Facebook tab.
 - Safari doesn't support `"world": "MAIN"` for content scripts, so `content.js` injects `interceptor.js` into the page via a `<script>` tag (listed in `web_accessible_resources`).
 - Safari has no `downloads` API; saving uses a blob URL and an `<a download>` click.
-- Debugging: open **Develop → Web Inspector** on the Instagram tab; the extension logs lines prefixed with `[safari-media-saver]`. If ⬇ shows **?**, it logs what it saw on screen.
+- Debugging: open **Develop → Web Inspector** on the tab; the extension logs lines prefixed with `[safari-media-saver]`. If ⬇ shows **?**, it logs what it saw on screen and what media it knows about. On Facebook, the raw video objects it parsed are available in the page console as `__smsVideos`.
 
 ### Known limitations
 
-- Instagram changes its internal data format from time to time; when it does, saving may stop working until the parser is updated.
-- Highlight videos are identified by duration. Two videos in the same highlight with (nearly) identical length can be confused.
+- Instagram and Facebook change their internal data formats from time to time; when they do, saving may stop working until the parser is updated.
+- Streamed videos whose URL doesn't identify them (highlights, some feed videos) are matched by duration. Two videos with (nearly) identical length can be confused.
+- Saving many files in quick succession can get temporarily throttled by the CDN; waiting a bit and reloading fixes it.
 
 ## License
 
