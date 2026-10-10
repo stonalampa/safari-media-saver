@@ -23,23 +23,54 @@ A small Safari Web Extension that adds a **⬇ save** button to Instagram and Fa
 
 Files land in your Downloads folder as `<owner>_<id>.jpg` / `.mp4` (carousels get `_1`, `_2`, … suffixes).
 
-## How it works
+## Design
 
-Everything the extension saves has already reached your browser through normal browsing. It doesn't scrape anything: it picks up what the page already loaded, the same way you could find the file in Web Inspector's Network tab and save it by hand.
+### The idea
+
+Everything you see on Instagram or Facebook has already been downloaded by your browser. The full-size photo, the video and the story are all sitting in data the page received to show them to you. Saving one of them shouldn't need a paid extension, a third-party website that asks for your login, or a tool that talks to Meta's servers behind your back. It should be one click on what's already there.
+
+So the extension is built around one rule: **observe, never request**. It reads what the page already loaded and saves the file you're looking at. Nothing else.
+
+### Non-goals
+
+What it deliberately does *not* do matters as much as what it does. Each of these was a conscious choice:
+
+| Not built                          | Why                                                                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Calls to Instagram/Facebook APIs   | Tools like `yt-dlp` or `instaloader` query the API with your session cookies from a non-browser client — the traffic pattern that triggers "suspicious activity" checks. Passive observation adds nothing for the platform to detect. |
+| Bulk / profile download            | One click saves what's on screen. No "download all", no background crawling, no queue. Bulk collection is what scraping is; this isn't that. |
+| Anonymous story viewing            | You can only save a story by watching it, which puts you in the owner's viewer list, exactly as when you watch it normally. The extension never hides who you are. |
+| Access to anything you can't see   | No bypassing private accounts, logins or restrictions. If your account can't view it, the extension can't save it. |
+| Servers, accounts, telemetry       | Nothing leaves your Mac except the download from the CDN. No data is collected, stored or sent anywhere. |
+
+### How it works
+
+You could do the same by hand: open Web Inspector's Network tab, find the file and save it. The extension automates that one step:
 
 1. **Observe.** Instagram and Facebook pages receive JSON describing every post, reel, photo, video and story you scroll past, including direct CDN links to the full-size media. `interceptor.js` runs in the page and *reads* those responses (`fetch`, `XMLHttpRequest`, and the data embedded in the initial HTML). It never sends a request of its own.
 2. **Match.** `content.js` works out what you're looking at: the post, photo, video or story id in the URL, the most visible post in the feed, or — where the URL doesn't identify the current item, as in highlights — the image/video on screen, matched by its CDN file name or (for streamed videos) by duration, read from the video's DASH manifest.
 3. **Save.** On click, the file is fetched from the CDN (`*.cdninstagram.com` / `*.fbcdn.net`) using the signed link the page already had, *without* cookies, and saved via a regular browser download.
 
-### Why it's safe for your account
+## Playing by the rules
 
-Tools like `yt-dlp` or `instaloader` call Instagram's API themselves, using your session cookies from a client that doesn't look like a browser — exactly the kind of traffic that triggers "suspicious activity" checks. This extension doesn't:
+The project was built to stay on the right side of both the law and the platforms' rules:
 
-- **No Instagram/Facebook API calls** and no use of your cookies outside the browser. Instagram and Facebook see nothing but you browsing normally.
-- **No bulk mode.** No "download the whole profile", no background crawling. One click saves what's on screen.
-- **No telemetry, no external servers.** Nothing leaves your Mac except the CDN download itself.
+- **Only what you can already see.** The extension works inside your normal, logged-in session and never gets around privacy settings, private accounts, blocks or any other access control.
+- **Transparent, not anonymous.** Using it leaves the same footprint as using the site: when you watch a story, its owner sees that you did. Functionally, it does what a screenshot or screen recording already does on every computer — only in original quality and with one click.
+- **No scraping.** No automated collection, no crawling, no bulk downloads, no data sent to anyone. Every save is a single, deliberate click by a person looking at that content.
+- **Your copy, your responsibility.** Saving a copy for yourself is one thing; reposting or redistributing someone else's photo or video needs their permission. Credit creators and respect their rights.
 
-This is a tool for personally saving the occasional post. Please respect the creators whose content you save.
+*This describes the project's intent and design; it is not legal advice.*
+
+## Intended use
+
+- **Your own content.** Keep your posts, stories, highlights and reels in full quality, instantly. No waiting for a "Download your information" export.
+- **Creators and social media managers.** Archive published content for a portfolio, client reports or backups.
+- **Family and friends.** Keep the photos and videos from an event that people shared with you.
+- **Reference and inspiration.** Save a tutorial, recipe or design reference for yourself.
+- **Keeping evidence.** Preserve a harassing post, scam ad or abusive story before it disappears, so it can be reported to the platform or the authorities.
+
+**Not intended for** collecting other people's content without their knowledge, monitoring someone, or reposting work that isn't yours. The design leaves no room for bulk or hidden use, and that's on purpose.
 
 ## Install (macOS, Safari)
 
